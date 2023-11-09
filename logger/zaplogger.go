@@ -3,6 +3,9 @@ package logger
 import (
 	"errors"
 	"os"
+	"strings"
+	"sync"
+	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -14,12 +17,40 @@ func build(cfg *Config) (*zap.Logger, error) {
 	enc, _ := newEncoder(zapCfg)
 	writer, errWriter := openWriters(cfg)
 
-	if zapCfg.Level == (zap.AtomicLevel{}) {
-		return nil, errors.New("missing Level")
-	}
-
-	log := zap.New(zapcore.NewCore(enc, writer, zapCfg.Level), buildOptions(zapCfg, errWriter)...)
+	atom := zap.NewAtomicLevel()
+	//zapCfg.Level = atom
+	log := zap.New(zapcore.NewCore(enc, writer, &atom), buildOptions(zapCfg, errWriter)...)
+	go 	logLevelWatcher(&atom, log)
 	return log, nil
+}
+
+func logLevelWatcher(atom *zap.AtomicLevel, log *zap.Logger) {
+	var current, past string
+	for {
+		time.Sleep(100*time.Millisecond)
+		current = readLog(log)
+		if current != past {
+			past = current
+			na, err := zapcore.ParseLevel(current)
+			if err != nil {
+				continue
+			}
+			atom.SetLevel(na)
+			log.Info("log level is changed", zap.String("LEVEL", log.Level().CapitalString()))
+		}
+	}
+}
+
+var mx sync.Mutex
+func readLog(log *zap.Logger) string {
+	mx.Lock()
+	defer mx.Unlock()
+	dat, err := os.ReadFile("/logLevel")
+	if err != nil {
+		return ""
+	}
+	lines := strings.TrimSuffix(string(dat), "\n")
+	return lines
 }
 
 func newEncoder(cfg zap.Config) (zapcore.Encoder, error) {
