@@ -1,0 +1,11 @@
+services:
+  web-server:
+    image: "docker.io/library/web"
+    environment:
+      - VITE_APP_API_ROOT=http://app-server:8080
+    ports:
+      - "3000:3000"
+  app-server:
+    image: "docker.io/library/app-server"
+    ports:
+      - "8080:8080"
